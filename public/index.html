@@ -1,1 +1,10 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>RAON ERP v11 New Build</title><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="/style.css"></head><body><div id="app"></div><script src="/app.js"></script></body></html>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><title>RAON E&G ERP v11</title><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="/style.css"></head><body>
+<div id="login" class="login-screen">
+  <div class="login-bg"></div>
+  <section class="hero-copy"><div class="brand"><div class="logo">R</div><div><b>RAON E&G</b><small>(주)라온이앤지</small></div></div><p>상업용 시스템에어컨 전문기업</p><h1>모든 현장을<br/>한눈에<span>.</span></h1><p class="sub">현장관리부터 AS까지, 라온 ERP로 스마트하게 관리하세요.</p><div class="features"><span>현장관리</span><span>견적관리</span><span>입금관리</span><span>일정관리</span><span>자재관리</span><span>AS관리</span></div></section>
+  <section class="login-card"><h2>RAON <em>ERP</em></h2><p>LOGIN</p><input id="id" placeholder="아이디를 입력하세요" value="admin@raon.local"><input id="pw" type="password" placeholder="비밀번호를 입력하세요" value="1234"><label><input type="checkbox"> 아이디 저장</label><button onclick="enterApp()">로그인</button><div class="links"><a>회원가입</a><a>아이디 찾기</a><a>비밀번호 찾기</a></div></section>
+</div>
+<div id="app" class="app hidden">
+<header class="topbar"><div class="left"><div class="brand small"><div class="logo navy">R</div><b>RAON E&G</b></div><button class="hamb">☰</button><h2 id="pageTitle">대시보드</h2></div><nav><button onclick="showPage('schedule')">📅 일정관리</button><button onclick="showPage('security')">🛡 보안센터</button><button onclick="showPage('company')">🏢 회사정보</button><button onclick="showPage('employees')">👥 직원관리</button><div class="user">관리자 <small>최고관리자</small></div></nav></header>
+<main id="main"></main><footer>RAON E&G ERP v11 · © 2026 RAON E&G</footer></div>
+<script src="/app.js"></script></body></html>
