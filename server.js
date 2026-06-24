@@ -55,7 +55,7 @@ function makeSchedulesFromSite(site) {
   add('기계설치', site.machineStart, site.machineEnd);
   return out;
 }
-app.get('/api/health', (req,res)=>res.json({ok:true, supabase: !!supabase, version:'v12-field-production'}));
+app.get('/api/health', (req,res)=>res.json({ok:true, supabase: !!supabase, version:'v12-master-locked' }));
 app.get('/api/sites', async (req,res)=>{ await loadAll(); res.json(store.sites); });
 app.get('/api/schedules', async (req,res)=>{ await loadAll(); res.json(store.schedules); });
 app.post('/api/sites', async (req,res)=>{
@@ -105,4 +105,4 @@ app.post('/api/upload/:bucket', upload.array('files'), async (req,res)=>{
   res.json({ok:true, files});
 });
 app.get('*', (req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
-app.listen(PORT, ()=> console.log(`RAON ERP v12 field production running on port ${PORT}`));
+app.listen(PORT, ()=> console.log(`RAON ERP v12 master locked running on port ${PORT}`));
