@@ -25,30 +25,48 @@ const emptyData = () => ({
   sites: [], schedules: [], quotes: [], payments: [], expenses: [], materials: [], labor: [], asLogs: [], vendors: [], employees: [], files: []
 });
 
+
+function normalizeData(data){
+  const base = emptyData();
+  data = data && typeof data === 'object' ? data : {};
+  for(const k of Object.keys(base)){
+    if(Array.isArray(base[k])) base[k] = Array.isArray(data[k]) ? data[k] : [];
+    else base[k] = data[k] ?? base[k];
+  }
+  return {...data, ...base, updatedAt: data.updatedAt || new Date().toISOString()};
+}
+
 async function readData(){
   if(supabase){
     try{
       const { data, error } = await supabase.storage.from(DATA_BUCKET).download(DATA_KEY);
       if(error) throw error;
       const txt = await data.text();
-      return JSON.parse(txt);
+      return normalizeData(JSON.parse(txt));
     }catch(e){
-      const base = fs.existsSync(DATA_FILE) ? JSON.parse(fs.readFileSync(DATA_FILE,'utf8')) : seedData();
-      await writeData(base);
-      return base;
+      console.warn('[SUPABASE_DATA_READ_FALLBACK]', e.message);
     }
   }
-  if(fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE,'utf8'));
+  if(fs.existsSync(DATA_FILE)) return normalizeData(JSON.parse(fs.readFileSync(DATA_FILE,'utf8')));
   const base = seedData(); fs.writeFileSync(DATA_FILE, JSON.stringify(base,null,2)); return base;
 }
 
 async function writeData(data){
+  data = normalizeData(data);
   data.updatedAt = new Date().toISOString();
   fs.writeFileSync(DATA_FILE, JSON.stringify(data,null,2));
   if(supabase){
-    const body = Buffer.from(JSON.stringify(data,null,2));
-    const { error } = await supabase.storage.from(DATA_BUCKET).upload(DATA_KEY, body, { contentType:'application/json', upsert:true });
-    if(error) throw error;
+    try{
+      const body = Buffer.from(JSON.stringify(data,null,2));
+      const { error } = await supabase.storage.from(DATA_BUCKET).upload(DATA_KEY, body, { contentType:'application/json', upsert:true });
+      if(error) throw error;
+      data._sync = 'supabase';
+    }catch(e){
+      console.warn('[SUPABASE_DATA_WRITE_FALLBACK_LOCAL]', e.message);
+      data._sync = 'local-fallback';
+    }
+  }else{
+    data._sync = 'local-only';
   }
   return data;
 }
@@ -74,7 +92,7 @@ function seedData(){
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-app.get('/api/health', (req,res)=>res.json({ok:true, version:'12.0.0', supabase: !!supabase}));
+app.get('/api/health', (req,res)=>res.json({ok:true, version:'12.0.1-fixed', supabase: !!supabase, url: !!process.env.SUPABASE_URL, secret: !!process.env.SUPABASE_SERVICE_ROLE_KEY}));
 app.get('/api/data', async (req,res)=>{ try{ res.json(await readData()); } catch(e){ res.status(500).json({error:e.message}); }});
 app.post('/api/data', async (req,res)=>{ try{ res.json(await writeData(req.body)); } catch(e){ res.status(500).json({error:e.message}); }});
 
@@ -85,18 +103,22 @@ app.post('/api/upload/:bucket', upload.single('file'), async (req,res)=>{
     const safe = Buffer.from(req.file.originalname, 'latin1').toString('utf8').replace(/[\\/]/g,'_');
     const key = `${new Date().toISOString().slice(0,10)}/${Date.now()}_${safe}`;
     if(supabase){
-      const { error } = await supabase.storage.from(bucket).upload(key, req.file.buffer, { contentType: req.file.mimetype, upsert:false });
-      if(error) throw error;
-      const { data } = supabase.storage.from(bucket).getPublicUrl(key);
-      return res.json({ bucket, key, url: data.publicUrl, name: safe, mime: req.file.mimetype, size: req.file.size });
+      try{
+        const { error } = await supabase.storage.from(bucket).upload(key, req.file.buffer, { contentType: req.file.mimetype, upsert:false });
+        if(error) throw error;
+        const { data } = supabase.storage.from(bucket).getPublicUrl(key);
+        return res.json({ bucket, key, url: data.publicUrl, name: safe, mime: req.file.mimetype, size: req.file.size, storage:'supabase' });
+      }catch(e){
+        console.warn('[SUPABASE_UPLOAD_FALLBACK_LOCAL]', e.message);
+      }
     }
     const dir = path.join(__dirname, 'public', 'uploads', bucket, path.dirname(key));
     fs.mkdirSync(dir, {recursive:true});
     const localPath = path.join(__dirname, 'public', 'uploads', bucket, key);
     fs.writeFileSync(localPath, req.file.buffer);
-    res.json({ bucket, key, url:`/uploads/${bucket}/${key}`, name:safe, mime:req.file.mimetype, size:req.file.size });
+    res.json({ bucket, key, url:`/uploads/${bucket}/${key}`, name:safe, mime:req.file.mimetype, size:req.file.size, storage:'local-fallback' });
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.get('*', (req,res)=>res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.listen(PORT, ()=> console.log(`RAON E&G ERP v12 production running on port ${PORT}`));
+app.listen(PORT, ()=> console.log(`RAON E&G ERP v12.0.1 fixed running on port ${PORT}`));

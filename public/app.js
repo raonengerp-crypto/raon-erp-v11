@@ -7,11 +7,37 @@ let current = 'dashboard';
 let currentMonth = new Date('2024-06-01');
 const colors = { '기계설치':'blue','선배관':'green','현장방문':'green','자재입고':'orange','AS':'purple','AS 방문':'purple','개인일정':'orange' };
 
-async function api(path, opts={}){
-  const r = await fetch(path, opts); const j = await r.json(); if(!r.ok) throw new Error(j.error||'오류'); return j;
+function inRange(ds, start, end){
+  if(!start) return false;
+  const a=start, b=end||start;
+  return ds>=a && ds<=b;
 }
-async function load(){ DB = await api('/api/data'); render(); }
-async function save(){ await api('/api/data', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(DB)}); render(); }
+function eventsForDate(ds){
+  const out=[];
+  DB.schedules.forEach(e=>{
+    if(e.date===ds) out.push(e);
+    if(inRange(ds,e.pipeStart,e.pipeEnd)) out.push({...e, type:'선배관', _range:true});
+    if(inRange(ds,e.installStart,e.installEnd)) out.push({...e, type:'기계설치', _range:true});
+  });
+  const seen=new Set();
+  return out.filter(e=>{ const k=e.id+'|'+e.type+'|'+(e.date===ds?'base':'range'); if(seen.has(k)) return false; seen.add(k); return true; });
+}
+
+async function api(path, opts={}){
+  const r = await fetch(path, opts);
+  let j = null;
+  try { j = await r.json(); } catch(e) { j = { error: await r.text() }; }
+  if(!r.ok) throw new Error(j.error || `서버 오류 ${r.status}`);
+  return j;
+}
+function normalizeDB(d){
+  const keys=['sites','schedules','quotes','payments','expenses','materials','labor','asLogs','vendors','employees','files'];
+  d = d && typeof d === 'object' ? d : {};
+  keys.forEach(k=>{ if(!Array.isArray(d[k])) d[k]=[]; });
+  return d;
+}
+async function load(){ DB = normalizeDB(await api('/api/data')); render(); }
+async function save(){ DB = normalizeDB(await api('/api/data', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(DB)})); render(); return DB; }
 function id(p){ return `${p}_${Date.now()}_${Math.random().toString(36).slice(2,7)}`; }
 function route(name){ current=name; render(); window.scrollTo(0,0); }
 
@@ -30,7 +56,7 @@ function render(){
 }
 function kpis(){
   const active = DB.sites.filter(s=>s.status!=='완료').length;
-  const todayCnt = DB.schedules.filter(s=>s.date==='2024-06-24').length;
+  const todayCnt = eventsForDate('2024-06-24').length;
   const receivable = DB.sites.reduce((a,s)=>a+(+s.receivable||Math.max(0,(+s.contractAmount||0)-(+s.paidAmount||0))),0);
   const due = DB.sites.reduce((a,s)=>a+(s.receivable? Math.min(+s.receivable, 19250000):0),0) || 19250000;
   return {active,todayCnt,receivable,due};
@@ -46,18 +72,18 @@ function calendar(mode='full'){
   const y=currentMonth.getFullYear(), m=currentMonth.getMonth();
   const first = new Date(y,m,1); const start = new Date(first); start.setDate(1-first.getDay());
   let html='<div class="cal">'+['일','월','화','수','목','금','토'].map(d=>`<div class="cal-head">${d}</div>`).join('');
-  for(let i=0;i<42;i++){ const d=new Date(start); d.setDate(start.getDate()+i); const ds=d.toISOString().slice(0,10); const evs=DB.schedules.filter(e=>e.date===ds); html+=`<div class="day ${d.getDay()===0?'sun':''}" ondblclick="openScheduleModal('${ds}')"><div class="date">${d.getDate()}</div>${evs.slice(0,2).map(e=>`<div class="evt" onclick="event.stopPropagation();openScheduleModal('${ds}','${e.id}')"><b>${e.time||''}</b><br>${e.siteName||e.title||'개인일정'}<br><span class="tag ${colors[e.type]||'blue'}">${e.type}</span></div>`).join('')}</div>`; }
+  for(let i=0;i<42;i++){ const d=new Date(start); d.setDate(start.getDate()+i); const ds=d.toISOString().slice(0,10); const evs=eventsForDate(ds); html+=`<div class="day ${d.getDay()===0?'sun':''}" ondblclick="openScheduleModal('${ds}')"><div class="date">${d.getDate()}</div>${evs.slice(0,2).map(e=>`<div class="evt" onclick="event.stopPropagation();openScheduleModal('${ds}','${e.id}')"><b>${e.time||''}</b><br>${e.siteName||e.title||'개인일정'}<br><span class="tag ${colors[e.type]||'blue'}">${e.type}</span></div>`).join('')}</div>`; }
   return html+'</div><div class="legend"><span><i class="dot"></i>기계설치</span><span><i class="dot" style="background:#16a34a"></i>현장 점검</span><span><i class="dot" style="background:#f97316"></i>자재 입고</span><span><i class="dot" style="background:#6d28d9"></i>AS 방문</span></div>';
 }
 function paymentTable(){return `<table class="table"><tr><th>구분</th><th>금액</th><th>건수</th></tr><tr><td>총 계약 금액</td><td>${fmt(DB.sites.reduce((a,s)=>a+(+s.contractAmount||0),0))}</td><td>${DB.sites.length}</td></tr><tr><td>총 입금 금액</td><td>${fmt(DB.sites.reduce((a,s)=>a+(+s.paidAmount||0),0))}</td><td>${DB.payments.length}</td></tr><tr><td>미수 금액</td><td style="color:#ef4444;font-weight:900">${fmt(kpis().receivable)}</td><td>${DB.sites.filter(s=>+s.receivable>0).length}</td></tr></table>`}
 function donut(){ const counts={}; DB.sites.forEach(s=>counts[s.status]=(counts[s.status]||0)+1); return `<div class="donut"><div class="circle"></div><div>${Object.entries(counts).map(([k,v])=>`<p><b>${k}</b> ${v}개</p>`).join('')}</div></div>`; }
-function schedulePage(){return `<main class="layout"><div class="page-title"><div><h1>일정관리</h1><p class="small">선배관·기계설치·AS·현장방문·개인일정을 관리합니다.</p></div><button class="primary" onclick="openScheduleModal()">+ 일정 등록</button></div><section class="grid kpi">${kCard('오늘 일정',DB.schedules.filter(s=>s.date==='2024-06-24').length+' 건','2024-06-24 기준','🗓️','대시보드로 →','dashboard','blue')}${kCard('이번주 일정',DB.schedules.length+' 건','전날 17시 알림 대상','🔔','대시보드로 →','dashboard','green')}${kCard('AS 방문',DB.schedules.filter(s=>s.type.includes('AS')).length+' 건','현장 방문기록 연동','🎧','AS관리로 →','as','purple')}${kCard('미완료 일정',DB.schedules.filter(s=>s.status!=='완료').length+' 건','완료체크 필요','📌','대시보드로 →','dashboard','orange')}</section><section class="grid main"><div class="card section"><div class="section-head"><h2>4주 캘린더</h2><div class="tools"><button class="ghost" onclick="moveMonth(-1)">‹</button><b>2024년 6월</b><button class="ghost" onclick="moveMonth(1)">›</button></div></div>${calendar('schedule')}</div><aside class="sidecol"><div class="card section"><h2>전날 17시 알림 미리보기</h2><div class="notice">내일 일정이 있으면 전날 오후 5시에 알림/문자/카톡으로 확인할 수 있게 준비합니다.</div><ul><li>현장명 / 일정종류</li><li>고객 연락처 / 현장소장 연락처</li><li>특이사항 / 도면·사진</li></ul></div><div class="card section"><h2>빠른 등록</h2><div class="quick">${['기계설치','선배관','AS 방문','개인일정'].map(t=>`<button class="qbtn" onclick="openScheduleModal(null,null,'${t}')">${t}</button>`).join('')}</div></div></aside></section>${scheduleModal()}</main>`}
+function schedulePage(){return `<main class="layout"><div class="page-title"><div><h1>일정관리</h1><p class="small">선배관·기계설치·AS·현장방문·개인일정을 관리합니다.</p></div><button class="primary" onclick="openScheduleModal()">+ 일정 등록</button></div><section class="grid kpi">${kCard('오늘 일정',eventsForDate('2024-06-24').length+' 건','2024-06-24 기준','🗓️','대시보드로 →','dashboard','blue')}${kCard('이번주 일정',DB.schedules.length+' 건','전날 17시 알림 대상','🔔','대시보드로 →','dashboard','green')}${kCard('AS 방문',DB.schedules.filter(s=>s.type.includes('AS')).length+' 건','현장 방문기록 연동','🎧','AS관리로 →','as','purple')}${kCard('미완료 일정',DB.schedules.filter(s=>s.status!=='완료').length+' 건','완료체크 필요','📌','대시보드로 →','dashboard','orange')}</section><section class="grid main"><div class="card section"><div class="section-head"><h2>4주 캘린더</h2><div class="tools"><button class="ghost" onclick="moveMonth(-1)">‹</button><b>2024년 6월</b><button class="ghost" onclick="moveMonth(1)">›</button></div></div>${calendar('schedule')}</div><aside class="sidecol"><div class="card section"><h2>전날 17시 알림 미리보기</h2><div class="notice">내일 일정이 있으면 전날 오후 5시에 알림/문자/카톡으로 확인할 수 있게 준비합니다.</div><ul><li>현장명 / 일정종류</li><li>고객 연락처 / 현장소장 연락처</li><li>특이사항 / 도면·사진</li></ul></div><div class="card section"><h2>빠른 등록</h2><div class="quick">${['기계설치','선배관','AS 방문','개인일정'].map(t=>`<button class="qbtn" onclick="openScheduleModal(null,null,'${t}')">${t}</button>`).join('')}</div></div></aside></section>${scheduleModal()}</main>`}
 function moveMonth(delta){ currentMonth.setMonth(currentMonth.getMonth()+delta); render(); }
 function scheduleModal(date='', schedId='', type='기계설치'){
   const s = schedId ? DB.schedules.find(x=>x.id===schedId) : null;
   const selectedSite = s?.siteId ? DB.sites.find(site=>site.id===s.siteId) : null;
   const siteInfo = selectedSite ? `고객 연락처: ${selectedSite.phone||'-'} / 현장소장: ${selectedSite.foreman||'-'} ${selectedSite.foremanPhone||''}` : '현장을 선택하면 고객/현장소장 연락처가 자동 표시됩니다.';
-  return `<div class="modal" id="scheduleModal"><div class="modal-box"><div class="section-head"><h2>일정 ${s?'상세 / 수정':'등록'}</h2><button class="ghost" onclick="closeModal()">닫기</button></div><div class="detail-grid"><div class="field"><label>현장 선택</label><select id="schSite" onchange="syncScheduleSiteInfo()"><option value="">직접입력/개인일정</option>${DB.sites.map(site=>`<option value="${site.id}" ${s?.siteId===site.id?'selected':''}>${site.name}</option>`).join('')}</select><div class="small" id="schSiteInfo" style="margin-top:6px">${siteInfo}</div></div><div class="field"><label>일정종류</label><select id="schType">${['기계설치','선배관','AS 방문','현장방문','자재입고','개인일정'].map(x=>`<option ${((s?.type)||type)===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>날짜</label><input class="input" type="date" id="schDate" value="${s?.date||date||'2024-06-24'}"></div><div class="field"><label>시간</label><input class="input" id="schTime" value="${s?.time||'09:00'}"></div><div class="field"><label>현장명/일정명</label><input class="input" id="schName" value="${s?.siteName||''}" placeholder="현장을 직접 입력하거나 개인일정명을 입력"></div><div class="field"><label>상태</label><select id="schStatus"><option ${(!s||s?.status==='예정')?'selected':''}>예정</option><option ${s?.status==='진행중'?'selected':''}>진행중</option><option ${s?.status==='완료'?'selected':''}>완료</option></select></div></div><div class="field"><label>메모/특이사항</label><textarea id="schMemo" placeholder="방문 목적, 준비사항, 특이사항을 입력하세요">${s?.memo||''}</textarea></div><div class="field"><label>사진/도면 첨부</label><input class="input" id="schFile" type="file" multiple accept="image/*,.pdf"></div><div class="filegrid" id="schFiles">${(s?.photos||[]).map(f=>filePreview(f)).join('') || '<div class="small">등록된 첨부파일이 없습니다.</div>'}</div><div class="section-head" style="margin-top:16px"><div>${s?`<button class="danger" onclick="deleteSchedule('${s.id}')">삭제</button>`:''}</div><button class="primary" onclick="saveSchedule('${s?.id||''}')">저장</button></div></div></div>`;
+  return `<div class="modal" id="scheduleModal"><div class="modal-box"><div class="section-head"><h2>일정 ${s?'상세 / 수정':'등록'}</h2><button class="ghost" onclick="closeModal()">닫기</button></div><div class="detail-grid"><div class="field"><label>현장 선택</label><select id="schSite" onchange="syncScheduleSiteInfo()"><option value="">직접입력/개인일정</option>${DB.sites.map(site=>`<option value="${site.id}" ${s?.siteId===site.id?'selected':''}>${site.name}</option>`).join('')}</select><div class="small" id="schSiteInfo" style="margin-top:6px">${siteInfo}</div></div><div class="field"><label>일정종류</label><select id="schType">${['기계설치','선배관','AS 방문','현장방문','자재입고','개인일정'].map(x=>`<option ${((s?.type)||type)===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>대표 날짜</label><input class="input" type="date" id="schDate" value="${s?.date||date||'2024-06-24'}"></div><div class="field"><label>대표 시간</label><input class="input" id="schTime" value="${s?.time||'09:00'}"></div><div class="field"><label>선배관 작업 시작일</label><input class="input" type="date" id="schPipeStart" value="${s?.pipeStart||''}"></div><div class="field"><label>선배관 작업 종료일</label><input class="input" type="date" id="schPipeEnd" value="${s?.pipeEnd||''}"></div><div class="field"><label>기계설치 시작일</label><input class="input" type="date" id="schInstallStart" value="${s?.installStart||''}"></div><div class="field"><label>기계설치 종료일</label><input class="input" type="date" id="schInstallEnd" value="${s?.installEnd||''}"></div><div class="field"><label>현장명/일정명</label><input class="input" id="schName" value="${s?.siteName||''}" placeholder="현장을 직접 입력하거나 개인일정명을 입력"></div><div class="field"><label>상태</label><select id="schStatus"><option ${(!s||s?.status==='예정')?'selected':''}>예정</option><option ${s?.status==='진행중'?'selected':''}>진행중</option><option ${s?.status==='완료'?'selected':''}>완료</option></select></div></div><div class="field"><label>메모/특이사항</label><textarea id="schMemo" placeholder="방문 목적, 준비사항, 특이사항을 입력하세요">${s?.memo||''}</textarea></div><div class="field"><label>사진/도면 첨부</label><input class="input" id="schFile" type="file" multiple accept="image/*,.pdf"></div><div class="filegrid" id="schFiles">${(s?.photos||[]).map(f=>filePreview(f)).join('') || '<div class="small">등록된 첨부파일이 없습니다.</div>'}</div><div class="section-head" style="margin-top:16px"><div>${s?`<button class="danger" onclick="deleteSchedule('${s.id}')">삭제</button>`:''}</div><button class="primary" onclick="saveSchedule('${s?.id||''}')">저장</button></div></div></div>`;
 }
 function openScheduleModal(date='', id='', type='기계설치'){
   const old=$('#scheduleModal'); if(old) old.remove();
@@ -71,16 +97,63 @@ function syncScheduleSiteInfo(){
 }
 function closeModal(){ $$('.modal').forEach(m=>m.classList.remove('show')); }
 async function saveSchedule(existingId){
-  const siteId=$('#schSite').value; const site=DB.sites.find(s=>s.id===siteId); let photos=[]; const old=DB.schedules.find(s=>s.id===existingId); if(old) photos=[...(old.photos||[])];
-  const files=$('#schFile').files; for(const f of files){ const fd=new FormData(); fd.append('file',f); photos.push(await api('/api/upload/schedule',{method:'POST',body:fd})); }
-  const rec={id:existingId||id('sch'),siteId,siteName: site?site.name:($('#schName').value||'개인일정'),type:$('#schType').value,date:$('#schDate').value,time:$('#schTime').value,status:$('#schStatus').value,memo:$('#schMemo').value,customerPhone:site?.phone||'',foremanPhone:site?.foremanPhone||'',photos};
-  if(existingId) DB.schedules=DB.schedules.map(s=>s.id===existingId?rec:s); else DB.schedules.push(rec);
-  closeModal(); await save(); alert('저장되었습니다.');
+  try{
+    const siteId=$('#schSite').value;
+    const site=DB.sites.find(s=>s.id===siteId);
+    let photos=[];
+    const old=DB.schedules.find(s=>s.id===existingId);
+    if(old) photos=[...(old.photos||[])];
+    const files=$('#schFile')?.files || [];
+    for(const f of files){
+      const fd=new FormData();
+      fd.append('file',f);
+      const uploaded = await api('/api/upload/schedule',{method:'POST',body:fd});
+      photos.push(uploaded);
+    }
+    const rec={
+      id: existingId || id('sch'),
+      siteId,
+      siteName: site ? site.name : (($('#schName').value || '').trim() || '개인일정'),
+      type: $('#schType').value,
+      date: $('#schDate').value,
+      time: $('#schTime').value,
+      status: $('#schStatus').value,
+      memo: $('#schMemo').value,
+      pipeStart: $('#schPipeStart')?.value || '',
+      pipeEnd: $('#schPipeEnd')?.value || '',
+      installStart: $('#schInstallStart')?.value || '',
+      installEnd: $('#schInstallEnd')?.value || '',
+      customerPhone: site?.phone || '',
+      foremanPhone: site?.foremanPhone || '',
+      photos
+    };
+    if(!rec.date){ alert('날짜를 선택해주세요.'); return; }
+    if(existingId) DB.schedules=DB.schedules.map(s=>s.id===existingId?rec:s); else DB.schedules.push(rec);
+    await save();
+    closeModal();
+    alert('저장되었습니다.');
+  }catch(e){
+    console.error(e);
+    alert('저장 실패: ' + e.message);
+  }
 }
-async function deleteSchedule(idv){ if(!idv) return closeModal(); if(confirm('삭제하시겠습니까?')){ DB.schedules=DB.schedules.filter(s=>s.id!==idv); closeModal(); await save(); alert('삭제되었습니다.'); }}
+async function deleteSchedule(idv){
+  if(!idv) return closeModal();
+  if(confirm('삭제하시겠습니까?')){
+    try{
+      DB.schedules=DB.schedules.filter(s=>s.id!==idv);
+      await save();
+      closeModal();
+      alert('삭제되었습니다.');
+    }catch(e){
+      console.error(e);
+      alert('삭제 실패: ' + e.message);
+    }
+  }
+}
 function filePreview(f){ const isImg=(f.mime||'').startsWith('image/')||/\.(jpg|png|jpeg|webp)$/i.test(f.url||''); return `<div class="filebox">${isImg?`<img src="${f.url}">`:`<a href="${f.url}" target="_blank">${f.name||'파일'}</a>`}</div>` }
 function sitesPage(){ return `<main class="layout"><div class="page-title"><div><h1>현장관리</h1><p class="small">현장 상세, 일정, 계약/입금, 비용/손익, 도면/사진, AS 이력을 관리합니다.</p></div><button class="primary" onclick="openSiteModal()">+ 현장 등록</button></div>${siteDetail(DB.sites[0])}${siteModal()}</main>`; }
-function siteDetail(s){ return `<section class="card section"><div class="section-head"><div><h2>${s.name} <span class="tag blue">${s.status}</span></h2><p class="small">담당자 ${s.manager} · 고객 ${s.customer} · 연락처 ${s.phone} · 현장소장 ${s.foreman} ${s.foremanPhone}</p></div><div><button class="ghost" onclick="openSiteModal('${s.id}')">수정</button></div></div><div class="tabs">${['기본 정보','일정 관리','계약 / 입금','비용 / 손익','도면 / 사진','AS 이력'].map((t,i)=>`<div class="tab ${i==0?'active':''}">${i+1}. ${t}</div>`).join('')}</div><div class="cols"><div class="card section"><h2>기본 정보</h2><table class="table"><tr><th>현장명</th><td>${s.name}</td></tr><tr><th>고객명</th><td>${s.customer}</td></tr><tr><th>고객 연락처</th><td>${s.phone}</td></tr><tr><th>현장소장</th><td>${s.foreman}</td></tr><tr><th>주소</th><td>${s.address||'-'}</td></tr><tr><th>특이사항</th><td>${s.note||'-'}</td></tr></table></div><div class="card section"><h2>일정 관리</h2><table class="table"><tr><th>구분</th><th>날짜</th><th>상태</th></tr>${DB.schedules.filter(x=>x.siteId===s.id).map(x=>`<tr><td>${x.type}</td><td>${x.date}</td><td><span class="tag ${colors[x.type]||'blue'}">${x.status}</span></td></tr>`).join('')}</table></div><div class="card section"><h2>계약 / 입금</h2><p>계약금액 <b>${fmt(s.contractAmount)}원</b></p><p>실제 입금액 <b style="color:#2563eb">${fmt(s.paidAmount)}원</b></p><p>미수금 <b style="color:#ef4444;font-size:24px">${fmt(s.receivable)}원</b></p></div></div></section>`}
+function siteDetail(s){ return `<section class="card section"><div class="section-head"><div><h2>${s.name} <span class="tag blue">${s.status}</span></h2><p class="small">담당자 ${s.manager} · 고객 ${s.customer} · 연락처 ${s.phone} · 현장소장 ${s.foreman} ${s.foremanPhone}</p></div><div><button class="ghost" onclick="openSiteModal('${s.id}')">수정</button></div></div><div class="tabs">${['기본 정보','일정 관리','계약 / 입금','비용 / 손익','도면 / 사진','AS 이력'].map((t,i)=>`<div class="tab ${i==0?'active':''}">${i+1}. ${t}</div>`).join('')}</div><div class="cols"><div class="card section"><h2>기본 정보</h2><table class="table"><tr><th>현장명</th><td>${s.name}</td></tr><tr><th>고객명</th><td>${s.customer}</td></tr><tr><th>고객 연락처</th><td>${s.phone}</td></tr><tr><th>현장소장</th><td>${s.foreman}</td></tr><tr><th>주소</th><td>${s.address||'-'}</td></tr><tr><th>특이사항</th><td>${s.note||'-'}</td></tr></table></div><div class="card section"><h2>일정 관리</h2><table class="table"><tr><th>구분</th><th>날짜</th><th>상태</th></tr>${DB.schedules.filter(x=>x.siteId===s.id).map(x=>`<tr><td>${x.type}</td><td>${x.date}${x.pipeStart?`<br>선배관 ${x.pipeStart}~${x.pipeEnd||x.pipeStart}`:''}${x.installStart?`<br>기계설치 ${x.installStart}~${x.installEnd||x.installStart}`:''}</td><td><span class="tag ${colors[x.type]||'blue'}">${x.status}</span></td></tr>`).join('')}</table></div><div class="card section"><h2>계약 / 입금</h2><p>계약금액 <b>${fmt(s.contractAmount)}원</b></p><p>실제 입금액 <b style="color:#2563eb">${fmt(s.paidAmount)}원</b></p><p>미수금 <b style="color:#ef4444;font-size:24px">${fmt(s.receivable)}원</b></p></div></div></section>`}
 function openSiteModal(idv=''){ alert('현장 등록/수정은 다음 단계에서 상세 입력폼으로 확장합니다.'); }
 function siteModal(){return ''}
 function quotesPage(){return `<main class="layout"><div class="page-title"><h1>견적관리</h1><button class="primary">+ 견적 작성</button></div><section class="card section"><h2>견적서 상세</h2><table class="table"><tr><th>견적번호</th><th>현장명</th><th>고객</th><th>상태</th><th>총액</th></tr>${DB.quotes.map(q=>`<tr><td>${q.id}</td><td>${q.siteName}</td><td>${q.customer}</td><td>${q.status}</td><td>${fmt(q.total)}</td></tr>`).join('')}</table><div class="detail-grid" style="margin-top:14px"><div class="card section"><h2>A. 장비 내역</h2><table class="table"><tr><th>제품명</th><th>수량</th><th>단가</th></tr><tr><td>LG MULTI V S</td><td>1</td><td>4,800,000</td></tr></table></div><div class="card section"><h2>B. 설치비 / C. 추가비</h2><table class="table"><tr><td>4WAY 1대 기본 설치</td><td>1,800,000</td></tr><tr><td>동배관 15/9</td><td>850,000</td></tr></table></div></div></section></main>`}
