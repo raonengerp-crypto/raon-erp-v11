@@ -1,1 +1,17 @@
-{"name":"raon-erp-v12-master-locked-responsive-fit","version":"12.1.1","main":"server.js","scripts":{"start":"node server.js"},"dependencies":{"express":"^4.18.2"},"engines":{"node":">=18"}}
+{
+  "name": "raon-erp-v12-full-preview",
+  "version": "12.2.0",
+  "description": "RAON ERP v12 full preview - locked UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "latest",
+    "express": "latest",
+    "multer": "latest"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
