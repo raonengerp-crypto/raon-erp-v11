@@ -1,9 +1,15 @@
 {
-  "name": "raon-erp-v12-full-preview",
-  "version": "12.2.0",
-  "description": "RAON E&G ERP v12 full preview - dashboard/field/quote/tax/material master locked UI",
+  "name": "raon-erp-v12-tax-dashboard-locked",
+  "version": "12.3.0",
+  "description": "RAON E&G ERP v12 tax dashboard locked UI no left menu",
   "main": "server.js",
-  "scripts": {"start": "node server.js"},
-  "dependencies": {"express": "^4.19.2"},
-  "engines": {"node": ">=18"}
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
