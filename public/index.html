@@ -1,7 +1,20 @@
-
-<!doctype html><html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>RAON E&G ERP v12 Full Preview</title><link rel="stylesheet" href="/style.css"/></head>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAON E&G ERP v12 Full Preview</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
 <body>
-<div id="app"></div>
-<script src="/app.js"></script>
-</body></html>
+  <header class="topbar">
+    <div class="brand"><div class="brandMark">R</div><div><strong>RAON E&G ERP v12</strong><span>Master Preview · UI LOCK</span></div></div>
+    <nav id="nav" class="nav"></nav>
+    <div class="topActions"><button class="iconBtn" onclick="toast('알림 기능 준비중')">🔔</button><button class="userBtn">안수원 이사</button></div>
+  </header>
+  <main id="app" class="app"></main>
+  <div id="modal" class="modal hidden"><div class="modalCard"><button class="modalClose" onclick="closeModal()">닫기</button><div id="modalBody"></div></div></div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
