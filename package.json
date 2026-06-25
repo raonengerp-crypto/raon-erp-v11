@@ -1,1 +1,1 @@
-{"name":"raon-erp-v12-master-recovered-all-modules","version":"12.4.2","scripts":{"start":"node server.js"},"dependencies":{"express":"^4.18.2"},"engines":{"node":">=18"}}
+{"name":"raon-erp-v12-quote-master-inserted","version":"12.6.0","main":"server.js","scripts":{"start":"node server.js"},"dependencies":{"express":"^4.18.2"}}
