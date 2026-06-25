@@ -1,15 +1,1 @@
-{
-  "name": "raon-erp-v12-tax-dashboard-responsive-fit",
-  "version": "12.3.1",
-  "description": "RAON E&G ERP v12 tax dashboard locked UI responsive fit no left menu",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
-  },
-  "engines": {
-    "node": ">=18"
-  }
-}
+{"name":"raon-erp-v12-tax-popup-dashboard","version":"12.4.0","scripts":{"start":"node server.js"},"dependencies":{"express":"latest"}}
