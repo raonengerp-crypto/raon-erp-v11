@@ -1,6 +1,6 @@
 {
-  "name": "raon-erp-v12-quote-master-compact-db",
-  "version": "12.6.1",
+  "name": "raon-erp-v12-quote-complete-final",
+  "version": "12.6.2",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
