@@ -1,0 +1,1 @@
+export function renderMaterial(el){el.innerHTML=`<h1>자재관리</h1><div class="card"><h2>자재내역 붙여넣기</h2><textarea rows="8" placeholder="15/9 배관 2롤\n25엘보 30개\nR410A 1통"></textarea><br><br><button class="btn">자동분석</button></div><br><div class="card"><h2>자재 DB</h2><p>배관 / 보온제 / PVC / 행거 / 통신선 / 전원선 / 냉매 / 드레인펌프 / 멀티부자재</p></div>`;}

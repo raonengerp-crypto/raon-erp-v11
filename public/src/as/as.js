@@ -1,0 +1,1 @@
+export function renderAs(el){el.innerHTML=`<h1>AS관리</h1><div class="card"><button class="btn">AS 접수</button><table class="table"><tr><th>현장</th><th>증상</th><th>상태</th></tr><tr><td>여수 OO상가</td><td>냉방 불량</td><td>접수</td></tr></table></div>`;}

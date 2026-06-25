@@ -1,0 +1,5 @@
+import {renderDashboard} from '../dashboard/dashboard.js';import {renderField} from '../field/field.js';import {renderQuote} from '../quote/quote.js';import {renderTax} from '../tax/tax.js';import {renderMaterial} from '../material/material.js';import {renderAs} from '../as/as.js';import {renderSettings} from '../settings/settings.js';
+const routes={dashboard:renderDashboard,field:renderField,quote:renderQuote,material:renderMaterial,tax:renderTax,as:renderAs,settings:renderSettings};
+const names={dashboard:'대시보드',field:'현장관리',quote:'견적관리',material:'자재관리',tax:'세무관리',as:'AS관리',settings:'설정'};
+export function go(route){const app=document.getElementById('app');app.innerHTML=`<header class="top"><div class="brand"><span class="logo">R</span>RAON E&G ERP v13</div><nav class="nav">${Object.entries(names).map(([k,v])=>`<button data-r="${k}" class="${k===route?'active':''}">${v}</button>`).join('')}</nav><b>관리자</b></header><main class="page" id="page"></main>`;document.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>go(b.dataset.r));routes[route](document.getElementById('page'));}
+window.go=go;go('dashboard');
