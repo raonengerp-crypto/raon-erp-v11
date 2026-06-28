@@ -1,1 +1,95 @@
-{"name":"raon-erp-v13-gold-full-reset","version":"13.2.0","type":"module","scripts":{"start":"node server.js"},"dependencies":{"express":"latest"}}
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
+
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'raon-final-dev-secret';
+const DATA_PATH = process.env.DATA_PATH || path.join(__dirname, 'data', 'raon.json');
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const nanoid = () => randomUUID();
+
+fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const TABLES = [
+  'users','customers','sites','quotes','quote_items','contracts','products','extra_fees','materials','stock_moves',
+  'tax_entries','as_requests','employees','approvals','billings','security_logs','settings','photos','aftercare'
+];
+
+function seedJson(name){ try { return JSON.parse(fs.readFileSync(path.join(__dirname, name), 'utf8')); } catch { return []; } }
+const nowIso = () => new Date().toISOString();
+
+const db = {
+  data: {},
+  load(){
+    if(fs.existsSync(DATA_PATH)) this.data = JSON.parse(fs.readFileSync(DATA_PATH,'utf8'));
+    for(const t of TABLES) if(!Array.isArray(this.data[t])) this.data[t]=[];
+    if(!this.data.users.length) this.seed();
+    this.ensureDefaults();
+    this.save();
+  },
+  save(){ fs.writeFileSync(DATA_PATH, JSON.stringify(this.data,null,2)); },
+  all(table){ if(!this.data[table]) throw new Error('Unknown table: '+table); return [...this.data[table]].sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||''))); },
+  get(table,id){ return (this.data[table]||[]).find(r=>r.id===id); },
+  insert(table, body){ if(!this.data[table]) throw new Error('Unknown table: '+table); const row={id:nanoid(),...body,created_at:body.created_at||nowIso(),updated_at:nowIso()}; this.data[table].push(row); this.save(); return row; },
+  update(table,id,body){ if(!this.data[table]) throw new Error('Unknown table: '+table); const i=this.data[table].findIndex(r=>r.id===id); if(i<0) throw new Error('not found'); this.data[table][i]={...this.data[table][i],...body,updated_at:nowIso()}; this.save(); return this.data[table][i]; },
+  delete(table,id){ if(!this.data[table]) throw new Error('Unknown table: '+table); const before=this.data[table].length; this.data[table]=this.data[table].filter(r=>r.id!==id); this.save(); return before!==this.data[table].length; },
+  findUser(username){ return this.data.users.find(u=>u.username===username); },
+  addUnique(table,key,row){ if(!this.data[table].some(x=>String(x[key]||'')===String(row[key]||''))) this.data[table].push({id:nanoid(),...row,created_at:row.created_at||nowIso(),updated_at:nowIso()}); },
+  ensureDefaults(){
+    const products = seedJson('seed-products.json');
+    for(const p of products) this.addUnique('products','model',p);
+    const materials = seedJson('seed-materials.json');
+    for(const m of materials) this.addUnique('materials','name',m);
+    const extras=['배관추가','PVC 드레인 추가','앵글','바닥앵글','2단앵글','바람막이','코어타공','전산대','냉매보충','배수펌프','유선리모컨','무선리모컨','ACP','16실 제어기','중앙제어','분지관','스카이','크레인','지게차','기타'];
+    extras.forEach(name=>this.addUnique('extra_fees','name',{name,memo:'금액 수기입력'}));
+    this.addUnique('settings','key',{key:'company',value:{name:'㈜라온이앤지',ceo:'문지원',biz_no:'734-86-02880',phone:'061-901-7770',fax:'061-903-8880',address:'순천시 구암길 6-5 1층',business:'건설업',type:'냉난방설비공사',manager:'안수원',manager_phone:'010-6300-7770',bank:'농협 351-1285-9434-13 ㈜라온이앤지'}});
+  },
+  seed(){
+    const now=nowIso();
+    this.data.users.push({id:nanoid(),username:'admin',password_hash:bcrypt.hashSync('1234',10),name:'관리자',role:'admin',company_type:'company',company_name:'㈜라온이앤지',status:'active',created_at:now,updated_at:now});
+    this.data.employees.push({id:nanoid(),name:'안수원',phone:'010-6300-7770',role:'총괄이사',type:'관리자',daily_wage:250000,permissions:'전체',created_at:now});
+    this.data.customers.push({id:nanoid(),type:'업체고객',name:'순천 소망교회',ceo:'',phone:'010-0000-0000',address:'순천시',trade_type:'매출처,AS고객',payment_condition:'협의',aftercare_status:'대기',created_at:now});
+    this.data.sites.push({id:nanoid(),site_name:'순천 소망교회',customer_name:'순천 소망교회',phone:'010-0000-0000',address:'순천시',status:'진행중',contract_amount:20560000,machine_cost:15920000,material_cost:800000,labor_cost:1200000,equipment_cost:150000,etc_cost:200000,install_cost:4490000,rough_start:'2026-06-20',rough_end:'2026-06-22',install_start:'2026-06-25',install_end:'2026-06-26',created_at:now});
+    this.data.tax_entries.push(
+      {id:nanoid(),site_name:'순천 소망교회',direction:'매출',category:'계약금',amount:5000000,paid_amount:2500000,pay_status:'부분결제',proof_type:'계좌이체',created_at:now},
+      {id:nanoid(),site_name:'순천 소망교회',direction:'매입',category:'기계대',amount:15920000,paid_amount:0,pay_status:'미결제',proof_type:'세금계산서',created_at:now}
+    );
+  }
+};
+
+db.load();
+const app=express();
+app.use(cors());
+app.use(express.json({limit:'30mb'}));
+app.use('/uploads',express.static(UPLOAD_DIR));
+app.use(express.static(path.join(__dirname,'../client')));
+const upload=multer({dest:UPLOAD_DIR});
+
+function auth(req,res,next){ const token=String(req.headers.authorization||'').replace('Bearer ',''); if(!token) return res.status(401).json({error:'unauthorized'}); try{req.user=jwt.verify(token,JWT_SECRET); next();}catch{return res.status(401).json({error:'invalid token'});} }
+function log(user,action,meta={}){ try{ db.insert('security_logs',{user:user?.username||user?.name||'system',action,ip:meta.ip||'',memo:meta.memo||''}); }catch{} }
+
+app.post('/api/login',(req,res)=>{ const {username,password}=req.body||{}; const user=db.findUser(username); if(!user || !bcrypt.compareSync(password||'',user.password_hash)) return res.status(401).json({error:'아이디 또는 비밀번호 오류'}); if(user.status!=='active') return res.status(403).json({error:'관리자 승인 대기 중입니다.'}); const token=jwt.sign({id:user.id,username:user.username,name:user.name,role:user.role},JWT_SECRET,{expiresIn:'7d'}); log(user,'login',{ip:req.ip}); res.json({token,user:{id:user.id,username:user.username,name:user.name,role:user.role}}); });
+app.post('/api/signup',(req,res)=>{ const b=req.body||{}; if(!b.username||!b.password) return res.status(400).json({error:'아이디와 비밀번호는 필수입니다.'}); if(db.findUser(b.username)) return res.status(400).json({error:'중복 아이디입니다.'}); const row=db.insert('users',{username:b.username,password_hash:bcrypt.hashSync(b.password,10),name:b.name||'',role:'pending',company_type:b.company_type||'individual',company_name:b.company_name||'',biz_no:b.biz_no||'',phone:b.phone||'',status:'pending'}); if(b.company_type==='company') db.insert('customers',{type:'업체고객',name:b.company_name||b.name,ceo:b.ceo||'',biz_no:b.biz_no||'',phone:b.phone||'',trade_type:'협력업체,외주업체',payment_condition:'협의'}); res.json({id:row.id,status:row.status}); });
+app.post('/api/upload',auth,upload.array('files',10),(req,res)=>{ const files=(req.files||[]).map(f=>({url:'/uploads/'+f.filename,original:f.originalname,size:f.size})); res.json({files}); });
+
+for(const table of TABLES.filter(t=>t!=='settings')){
+  app.get('/api/'+table,auth,(req,res)=>res.json(db.all(table)));
+  app.post('/api/'+table,auth,(req,res)=>{ try{const r=db.insert(table,req.body||{}); log(req.user,'create '+table,{ip:req.ip}); res.json(r);}catch(e){res.status(400).json({error:e.message});} });
+  app.put('/api/'+table+'/:id',auth,(req,res)=>{ try{const r=db.update(table,req.params.id,req.body||{}); log(req.user,'update '+table,{ip:req.ip}); res.json(r);}catch(e){res.status(400).json({error:e.message});} });
+  app.delete('/api/'+table+'/:id',auth,(req,res)=>{ const ok=db.delete(table,req.params.id); log(req.user,'delete '+table,{ip:req.ip}); res.json({ok}); });
+}
+
+app.get('/api/dashboard',auth,(req,res)=>{ const sites=db.all('sites'), tax=db.all('tax_entries'), approvals=db.all('approvals'), asRows=db.all('as_requests'), after=db.all('aftercare'); const totalContract=sites.reduce((s,x)=>s+Number(x.contract_amount||0),0); const sales=tax.filter(x=>x.direction==='매출').reduce((s,x)=>s+Number(x.paid_amount||x.amount||0),0); const purchase=tax.filter(x=>x.direction==='매입').reduce((s,x)=>s+Number(x.amount||0),0); const paidPurchase=tax.filter(x=>x.direction==='매입').reduce((s,x)=>s+Number(x.paid_amount||0),0); const payable=tax.filter(x=>x.direction==='매입'&&x.pay_status!=='결제완료').reduce((s,x)=>s+Math.max(0,Number(x.amount||0)-Number(x.paid_amount||0)),0); const receivable=Math.max(0,totalContract-sales); res.json({totalContract,sales,purchase,paidPurchase,profit:sales-purchase,receivable,payable,sitesCount:sites.length,approvalPending:approvals.filter(a=>!['승인완료','결제완료','반려'].includes(a.status)).length,asOpen:asRows.filter(a=>a.status!=='완료').length,aftercareDue:after.filter(a=>a.status==='대기').length}); });
+
+app.post('/api/quote/single/calc',auth,(req,res)=>{ const b=req.body||{}; const qty=Number(b.qty||1); const product=db.data.products.find(p=>p.id===b.product_id)||{}; const model=String(product.model||''); const hp=String(product.hp||''); let pipeSet='15/9'; if(/032|023|020/.test(model)||/0\.6|0\.8|1HP/.test(hp)) pipeSet='6/9'; else if(/060/.test(model)||/2HP/.test(hp)) pipeSet='12/6'; const base=Number(b.base_pipe||15), extra=Number(b.extra_pipe||0), drainBase=Number(b.base_drain||16), drainExtra=Number(b.extra_drain||0); const pipeLen=(base+extra)*qty, drainLen=(drainBase+drainExtra)*qty; const pipeHanger=Math.ceil(pipeLen/1.5), drainHanger=Math.ceil(drainLen/1.5); const result=[{item:`냉매배관 세트 ${pipeSet}`,qty:pipeLen,unit:'m'},{item:'PVC 25파이 직관 4M',qty:Math.ceil(drainLen/4),unit:'본'},{item:'고무전선 1.0sq/4P',qty:pipeLen,unit:'m'},{item:'65파이 행거',qty:pipeHanger,unit:'EA'},{item:'50파이 원터치행거',qty:drainHanger,unit:'EA'}]; res.json({product,pipeSet,materials:result,amount:(Number(product.price||0)+Number(product.install_fee||0))*qty}); });
+
+app.get('/api/settings/company',auth,(req,res)=>res.json((db.data.settings.find(s=>s.key==='company')||{}).value||{}));
+app.get('/api/health',(req,res)=>res.json({ok:true,name:'RAON ERP FINAL LOCK IMPLEMENTED',version:'1.1.0'}));
+app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'../client/index.html')));
+app.listen(PORT,()=>console.log(`RAON ERP FINAL LOCK IMPLEMENTED running on ${PORT}`));
